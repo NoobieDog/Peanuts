@@ -1,12 +1,16 @@
-Peanuts V1.8                                   
+Peanuts V2.0                                   
                                     
 ========
 
-Release Date: 26/03/2017
+Release Date: 02/12/2018
 
 Peanuts is a free and open source wifi tracking tool. Based on the SensePosts Snoopy-NG project that is now closed.<br />
 
 Less dependencies, less overhead, less complications<br />
+
+This tool is featured in the film "All the devils men", Directed by Matthew Hope
+
+	https://www.imdb.com/title/tt6012244/
 
 NOTE: Im not sure how long i will supprot this project as its a slowly dying method, if i get time to work on it i will :D<br />
 
@@ -19,6 +23,7 @@ Changelog:
     # [DONE] - Defaults added to Arguments.
     # [DONE] - GPS added
     # [DONE] - Output CSV Tidy
+    # [DONE] - Added Json Output to endpoint
 
 TODO:
 
@@ -26,6 +31,8 @@ TODO:
 	# Better error correction on GPS exits or false connections
 	# Add Pause/Stop/Start functions to script.
 	# Live mapping in time
+	# silent mode
+	# Port to ESP32
 
 **** FOR EDUCATIONAL USE! Use at your own risk. **** <br />
 
@@ -77,7 +84,8 @@ python peanuts.py -i wlan0 -l Home -o Capture1.csv
 #### Advanced
 
 ``` bash
-python peanuts.py -i wlan0 -l home -a True -g True -o Capture1.csv
+python peanuts.py -i wlan0mon -l target1 -o unknown.csv -a true -m http://localhost:8080/api/data -g true
+
 ```
 
 -i Interface (Doesn't matter if not in monitor mode, the program will do it)<br />
@@ -85,8 +93,8 @@ python peanuts.py -i wlan0 -l home -a True -g True -o Capture1.csv
 -a Include Access Points too in the results<br />
 -g Get GPS location of your device (Not tested with Nethunter, yet. Also will need GPSD running)<br />
 -o Output file name for the CSV<br />
--b Start Bluetooth sniffing too<br /> (make sure you have either bt enabled in vm or a dongle)
-
+-b Start Bluetooth sniffing too<br /> (make sure you have either bt enabled in vm or  dongle)
+-m Send Map data to JSON endpoint
 
 ## Lets See it in Action
 
