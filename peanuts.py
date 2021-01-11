@@ -1,7 +1,8 @@
 #!/usr/bin/python
 
-# 02/12/2018 - NOTES
+# 11/01/2020 - NOTES
 
+# Updated to Python3
 # disabled BT scanning as it was being shitty
 # Json logging will cause a exception if no 200 ok responce is given from endpoint
 # gps lat long needs to be a value, if no GPS location can be found, then have exception but still send data
@@ -11,7 +12,7 @@ import threading
 import argparse
 import sys
 from gps import *
-import bluetooth
+# import bluetooth
 import manuf
 from scapy.all import *
 conf.verb = 0
@@ -21,6 +22,7 @@ import collections
 import requests
 import base64
 import json
+import binascii
 from os import system, path, getuid, uname
 
 PROBE_REQUEST_TYPE=0
@@ -70,8 +72,8 @@ class GpsPoller(threading.Thread):
             try:
                 if gpsd.waiting(): #only True if data is available
                     gpsd.next()
-            except:
-                print "GPSD Failed:"
+            except (RuntimeError, TypeError, NameError):
+                print('GPSD Failed!')
                 gpsd.close()
                 sys.exit()
 
@@ -97,7 +99,7 @@ def parse_args():
     parser.add_argument('-l', '--location', default='None', help="Location of survey")
     parser.add_argument('-a', '--access', default=False, help="Include AP's into the survey")
     parser.add_argument('-m', '--maps', default='', help="Send Map data to JSON endpoint")
-    parser.add_argument('-b', '--bt', default=False, help="Scans BT Devices too (will need a BT dongle)")
+   # parser.add_argument('-b', '--bt', default=False, help="Scans BT Devices too (will need a BT dongle)")
 
     return parser.parse_args()
 
@@ -109,7 +111,7 @@ def CryptoInfo(pkt):
     while isinstance(p, Dot11Elt):
         if p.ID == 48:
             crypto = "WPA2"
-        elif p.ID == 221 and p.info.startswith('\x00P\xf2\x01\x01\x00'):
+        elif p.ID == 221 and p.info.startswith(b'\x00P\xf2\x01\x01\x00'):
             crypto = "WPA"
         p = p.payload
     if not crypto:
@@ -117,7 +119,8 @@ def CryptoInfo(pkt):
             crypto = "WEP"
         else:
             crypto = "OPN"
-    if "0050f204104a000110104400010210" in str(pkt).encode("hex"):
+
+    if "0050f204104a000110104400010210" in str(pkt):
         crypto = crypto + R + " WPS"
 
     return crypto
@@ -149,11 +152,14 @@ def PacketHandler(pkt):
                 PrintPacketAP(pkt)
        # if pkt.addr1 and pkt.addr2:
         #    PrintClientAP(pkt)
+
+'''  DISABLED BT FOR NOW
     if args.bt:
         try:
             btscanning()
-        except Exception, e:
-            print 'Caught exception while running BT Sniffing',e
+        except (RuntimeError, TypeError, NameError):
+            print('Caught exception while running BT Sniffing')
+'''
 
 def PrintClientAP(pkt):
     global intf
@@ -172,26 +178,30 @@ def PrintClientAP(pkt):
     if pkt.addr2 in macAP:
         if pkt.addr1 not in noise:
             if pkt.type in [1, 2]:
-                print "Client: " + pkt.addr1.upper() + " -> " + pkt.addr2
+                print('Client: ' + pkt.addr1.upper() + ' -> ' + pkt.addr2)
 
 def PrintPacketAP(pkt):
     global Numap, Currentloc
     ts = time.time()
     st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M')
 
-    ssid_probe = pkt.info
+    ssid_probe = pkt.info.decode('utf-8')
+    
+    if not ssid_probe or ssid_probe == '\x00\x00\x00\x00\x00\x00\x00\x00\x00':
+        ssid_probe = 'Null SSID'
+
     manufacture = str(whmp.get_manuf(pkt.addr2))
     mac = pkt.addr2
 
     crypto = CryptoInfo(pkt)
-    rssival = str(get_rssi(pkt.notdecoded))
+    rssi = pkt[RadioTap]. dBm_AntSignal
 
     if args.gpstrack:
         gpslat = str(gpsd.fix.latitude)
         gpslong = str(gpsd.fix.longitude)
     else:
-        gpslat = "nil"
-        gpslong = "nil"
+        gpslat = 'nil'
+        gpslong = 'nil'
 
     # Logging info
     fields = []
@@ -204,25 +214,25 @@ def PrintPacketAP(pkt):
     fields.append(gpslat) # Log GPS data
     fields.append(gpslong) # Log GPS data
     fields.append(args.location) # Log Location data
-    fields.append(rssival) # RSSI
+    fields.append(str(rssi)) # RSSI
     
     # if AP ssid is not in clients and its not empty then print out, add  AP ssid and mac to lists
     if ssid_probe not in accessPoints and ssid_probe != "":
         accessPoints.append(ssid_probe)
         macAP.append(mac)
-        print W+ '[' +R+ 'AP' +W+ ':' +C+ manufacture +W+ '/' +B+ mac +W+ '] [' +T+ crypto +W+ '] [' +G+ 'SSID' +W+ ': ' +O+ ssid_probe.decode("utf-8") +W+ '] [' +P+ 'RSSI' +W+ ':' +T+ rssival +W+ ']'
+        print(W+ '[' +R+ 'AP' +W+ ':' +C+ manufacture +W+ '/' +B+ mac +W+ '] [' +T+ crypto +W+ '] [' +G+ 'SSID' +W+ ': ' +O+ ssid_probe +W+ '] [' +P+ 'RSSI' +W+ ':' +T+ str(rssi) +W+ ']')
         Numap += 1
     # if ssid is in clients but mac isnt seen before then print out and add the mac to the list
     elif ssid_probe in accessPoints and mac not in macAP:
         macAP.append(mac)
-        print W+ '[' +R+ 'AP' +W+ ':' +C+ manufacture +W+ '/' +B+ mac +W+ '] [' +T+ crypto +W+ '] [' +G+ 'SSID' +W+ ': ' +O+ ssid_probe.decode("utf-8") +W+ '] [' +P+ 'RSSI' +W+ ':' +T+ rssival +W+ ']'
+        print(W+ '[' +R+ 'AP' +W+ ':' +C+ manufacture +W+ '/' +B+ mac +W+ '] [' +T+ crypto +W+ '] [' +G+ 'SSID' +W+ ': ' +O+ ssid_probe +W+ '] [' +P+ 'RSSI' +W+ ':' +T+ str(rssi) +W+ ']')
         Numap += 1
-    
+
     logger.info(args.delimiter.join(fields))
 
     if args.maps:
         # MAPPING SYSTEM
-        jsondata = {"time": st, "device": "AP", "macaddress": mac, "manuf": manufacture, "ssid": ssid_probe, "crypto": crypto, "longlat": [-0.0, 0.0], "location": args.location, "rssi": rssival}
+        jsondata = {"time": st, "device": "AP", "macaddress": mac, "manuf": manufacture, "ssid": ssid_probe, "crypto": crypto, "longlat": [-0.0, 0.0], "location": args.location, "rssi": rssi}
         data_json = json.dumps(jsondata)
 
         s = requests.Session()
@@ -237,18 +247,19 @@ def PrintPacketClient(pkt):
     ts = time.time()
     st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M')
 
-    ssid_probe = pkt.getlayer(Dot11ProbeReq).info
+    ssid_probe = pkt.getlayer(Dot11ProbeReq).info.decode('utf-8')
+
     manufacture = str(whmp.get_manuf(pkt.addr2))
     mac = pkt.addr2
     crypto = 'None' #instead of being blank, client has none for crypto probe request
-    rssival = str(get_rssi(pkt.notdecoded))
+    rssi = pkt[RadioTap]. dBm_AntSignal
 
     if args.gpstrack:
         gpslat = str(gpsd.fix.latitude)
         gpslong = str(gpsd.fix.longitude)
     else:
-        gpslat = "nil"
-        gpslong = "nil"
+        gpslat = 'nil'
+        gpslong = 'nil'
 
     # Logging info
     fields = []
@@ -261,44 +272,36 @@ def PrintPacketClient(pkt):
     fields.append(gpslat) # Log GPS data
     fields.append(gpslong) # Log GPS data
     fields.append(args.location) # Log Location data
-    fields.append(rssival) # RSSI
-    
+    fields.append(str(rssi)) # RSSI
+
     # if ssid is not in clients and its not empty then print out, add ssid and mac to lists
     if ssid_probe not in clients and ssid_probe != "":
         clients.append(ssid_probe)
         macClient.append(mac)
-        print W+ '[' +R+ 'Client' +W+ ':' +C+ manufacture +W+ '/' +B+ mac +W+ '] [' +G+ 'SSID' +W+ ': ' +O+ ssid_probe.decode("utf-8") +W+ '] [' +P+ 'RSSI' +W+ ':' +T+ rssival +W+ ']'
+        print(W+ '[' +R+ 'Client' +W+ ':' +C+ manufacture +W+ '/' +B+ mac +W+ '] [' +G+ 'SSID' +W+ ': ' +O+ ssid_probe +W+ '] [' +P+ 'RSSI' +W+ ':' +T+ str(rssi) +W+ ']')
     # if ssid is in clients but mac isnt seen before then print out and add the mac to the list
     elif ssid_probe in clients and mac not in macClient:
         macClient.append(mac)
-        print W+ '[' +R+ 'Client' +W+ ':' +C+ manufacture +W+ '/' +B+ mac +W+ '] [' +G+ 'SSID' +W+ ': ' +O+ ssid_probe.decode("utf-8") +W+ '] [' +P+ 'RSSI' +W+ ':' +T+ rssival +W+ ']'
+        print(W+ '[' +R+ 'Client' +W+ ':' +C+ manufacture +W+ '/' +B+ mac +W+ '] [' +G+ 'SSID' +W+ ': ' +O+ ssid_probe +W+ '] [' +P+ 'RSSI' +W+ ':' +T+ str(rssi) +W+ ']')
         Numclients += 1
     # if mac is not in the list and the probe has a broadcast (empty) then add mac to list
     elif mac not in macClient and ssid_probe == "":
         macClient.append(mac)
-        print W+ '[' +R+ 'Client' +W+ ':' +C+ manufacture +W+ '/' +B+ mac +W+ '] [' +GR+ '*New Client*' +W+ '] [' +P+ 'RSSI' +W+ ':' +T+ rssival +W+ ']'
+        print(W+ '[' +R+ 'Client' +W+ ':' +C+ manufacture +W+ '/' +B+ mac +W+ '] [' +GR+ '*New Client*' +W+ '] [' +P+ 'RSSI' +W+ ':' +T+ str(rssi) +W+ ']')
         Numclients += 1
-
+    
+    
     logger.info(args.delimiter.join(fields))
 
     if args.maps:
         # MAPPING SYSTEM
-        jsondata = {"time": st, "device": "CLIENT", "macaddress": mac, "manuf": manufacture, "ssid": ssid_probe, "crypto": "N/A", "longlat": [-0.0, 0.0], "location": args.location, "rssi": rssival}
+        jsondata = {"time": st, "device": "CLIENT", "macaddress": mac, "manuf": manufacture, "ssid": ssid_probe, "crypto": "N/A", "longlat": [-0.0, 0.0], "location": args.location, "rssi": rssi}
         data_json = json.dumps(jsondata)
 
         s = requests.Session()
         headers = {'Content-Type': 'application/json', 'Accept':'application/json'}
         s.post(args.maps, data=data_json, headers=headers)
         # MAPPING SYSTEM
-        
-
-def get_rssi(extra):
-    rssi = int(-(256 - ord(extra[-2:-1])));
-    if rssi not in xrange(-100, 0):
-        rssi = (-(256 - ord(extra[-4:-3])));
-    if rssi < -100:
-        return -1;
-    return rssi;
 
 
 def getWirelessInterfacesList():
@@ -316,16 +319,17 @@ def getWirelessInterfacesList():
 
 def startup_checks():
     if getuid() != 0:
-        print R + "User is not Root."
+        print(R + 'User is not Root!')
         sys.exit()
 
     if uname()[0].startswith("Linux") and not "Darwin" not in uname():
-        print R + "Wrong OS."
+        print(R + 'Wrong OS!')
         sys.exit()
-	return;
+
+    return
 
 def logo():
-    print O + '''
+    print(O + '''
     %s______                      _       
     | ___ \                    | |      
     | |_/ /__  __ _ _ __  _   _| |_ ___ 
@@ -334,27 +338,29 @@ def logo():
 
     \_|  \___|\__,_|_| |_|\__,_|\__|___/
     %s
-    %sRelease Date%s: 01/12/2018
-    %sRelease Version%s: V.2.0
-    %sCode%s: stuart@sensepost.com // @NoobieDog
-    %sVisit%s:  www.sensepost.com // @sensepost
-    ''' %(B,C,R,W,R,W,R,W,R,W)         
-    print '['+G+'*'+W+'] Wifi Probe Investigator'
-    print '['+G+'-----------------------------------------------------'+W+']'
+    %sRelease Date%s: 11/01/2021
+    %sRelease Version%s: V.3.9
+    %sCode%s: Twitter: @NoobieDog
+    ''' %(B,C,R,W,R,W,R,W,R,W))        
+    print('['+G+'*'+W+'] Wifi Probe Investigator')
+    print('['+G+'-----------------------------------------------------'+W+']')
 
 def main(intf):
     try:
         sniff(iface=intf, prn=PacketHandler, store=0)
-    except Exception, e:
-        print 'Caught exception while running sniff()',e
+    except (RuntimeError, TypeError, NameError):
+        print('Caught exception while running sniff()')
+        raise
 
+''' DISABLED BT FOR NOW
 def btscanning():
     devices = bluetooth.discover_devices(duration=1, lookup_names = True)
 
     for addr, name in devices:
         if addr not in btclients:
-            print W+ '[' +R+ 'Bluetooth Client' +W+ ':' +B+ addr +W+ '] [' +G+ 'Name' +W+ ': ' +O+ name +W+ ']'
+            print(W+ '[' +R+ 'Bluetooth Client' +W+ ':' +B+ addr +W+ '] [' +G+ 'Name' +W+ ': ' +O+ name +W+ ']')
             btclients.append(addr)
+'''
 
 if __name__=="__main__":
     args = parse_args()
@@ -367,12 +373,12 @@ if __name__=="__main__":
 
     if not args.interface:
         intf = raw_input('['+G+'*'+W+'] Enter the Name of the interface to sniff: ')
-        print ("\n")
+        print("\n")
     else:
         intf = args.interface
 
     if "mon" not in intf: # yes i know this doesnt work with ubuntu/mint at the mo...
-        print '['+G+'*'+W+'] Setting Wireless card into Monitor Mode'
+        print('['+G+'*'+W+'] Setting Wireless card into Monitor Mode')
         if 'mon' not in getWirelessInterfacesList():
             #call(['airmon-ng', 'check', 'kill'], stdout=DN, stderr=DN)
             cmd = ['airmon-ng', 'start' ,intf]
@@ -387,13 +393,13 @@ if __name__=="__main__":
     if args.gpstrack:
         try:    
             gpsp = GpsPoller() # create the thread
-        except Exception, e:
-            print 'Caught exception while running GPS',e
+        except (RuntimeError, TypeError, NameError):
+            print('Caught exception while running GPS')
 
         try:
             gpsp.start() # start it up
-        except Exception, e:
-            print 'Caught exception while running GPS',e
+        except (RuntimeError, TypeError, NameError):
+            print('Caught exception while running GPS')
             gpsp.running = False
             gpsp.join() # wait for the thread to finish what it's doing
             sys.exit()
@@ -405,17 +411,17 @@ if __name__=="__main__":
 
 # Finish off with Tidy up of CSV. 
 
-print '\n \033[31m%d \033[0mClients | \033[33m%d \033[0mAPs' % (Numclients, Numap)
+print('\n \033[31m%d \033[0mClients | \033[33m%d \033[0mAPs' % (Numclients, Numap))
 
 outfile = args.output + '.csv'
 
-print G + '\n Creating CSV' +W+ ': ' + outfile
+print(G + '\n Creating CSV' +W+ ': ' + outfile)
 try:
     with open(args.output, 'rb') as inf, open(outfile, 'wb') as outf:
         outf.writelines(collections.OrderedDict.fromkeys(inf))
-except Exception, e:
-            print R + 'Caught exception while creating CSV File',e
+except (RuntimeError, TypeError, NameError):
+            print(R + 'Caught exception while creating CSV File')
 
 # Print Program Time
 
-print G + '\n Elapsed Time' +W+ ': %s' % (time.time() - start)
+print(G + '\n Elapsed Time' +W+ ': %s' % (time.time() - start))
