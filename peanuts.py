@@ -341,7 +341,7 @@ def logo():
     %sRelease Date%s: 11/01/2021
     %sRelease Version%s: V.3.9
     %sCode%s: Twitter: @NoobieDog
-    ''' %(B,C,R,W,R,W,R,W,R,W))        
+    ''' %(B,C,R,W,R,W,R,W))        
     print('['+G+'*'+W+'] Wifi Probe Investigator')
     print('['+G+'-----------------------------------------------------'+W+']')
 
