@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-# 11/01/2020 - NOTES
+# 09/04/2021 - NOTES
 
 # Updated to Python3
 # disabled BT scanning as it was being shitty
@@ -322,10 +322,6 @@ def startup_checks():
         print(R + 'User is not Root!')
         sys.exit()
 
-    if uname()[0].startswith("Linux") and not "Darwin" not in uname():
-        print(R + 'Wrong OS!')
-        sys.exit()
-
     return
 
 def logo():
@@ -338,8 +334,8 @@ def logo():
 
     \_|  \___|\__,_|_| |_|\__,_|\__|___/
     %s
-    %sRelease Date%s: 11/01/2021
-    %sRelease Version%s: V.3.9
+    %sRelease Date%s: 09/04/2021
+    %sRelease Version%s: V.4.0
     %sCode%s: Twitter: @NoobieDog
     ''' %(B,C,R,W,R,W,R,W))        
     print('['+G+'*'+W+'] Wifi Probe Investigator')
